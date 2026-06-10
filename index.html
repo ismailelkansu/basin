@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A7%3C/text%3E%3C/svg%3E">
 <style>
   :root{
-    --p0:#3aa0ff; --p1:#ff8a3d; --bg:#10151a; --panel:#1b232c; --txt:#e8eef4;
+    --p0:#3aa0ff; --p1:#ff8a3d; --bg:#10151a; --panel:#1b232c; --txt:#e8eef4; --gold:#ffd76a;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
@@ -26,16 +26,24 @@
   #status{font-size:13px;text-align:center;opacity:.85;flex:1}
   #board{flex:1;position:relative;min-height:0}
   canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+  #banner{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    max-width:min(440px,93%);background:rgba(18,28,38,.94);border:1px solid #36506b;
+    border-radius:12px;padding:11px 15px;font-size:15px;line-height:1.5;text-align:center;z-index:5}
+  #banner .hint{display:block;margin-top:6px;font-size:12px;color:var(--gold);letter-spacing:1px}
   #bar{display:flex;gap:10px;justify-content:center;align-items:center;padding:10px 14px 16px}
   .tool{flex:0 1 150px;padding:13px 0;font-size:16px;font-weight:700;letter-spacing:1px;
     border:2px solid #2c3845;border-radius:14px;background:var(--panel);color:var(--txt);
     cursor:pointer}
   .tool.sel{border-color:var(--txt);background:#27313d}
+  .tool.glow{border-color:var(--gold);animation:pulse 1.1s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,215,106,0)}
+    50%{box-shadow:0 0 18px 2px rgba(255,215,106,.75)}}
   .mini{padding:13px 14px;font-size:15px;border-radius:14px;border:2px solid #2c3845;
     background:var(--panel);color:var(--txt);cursor:pointer}
   .overlay{position:fixed;inset:0;background:rgba(8,12,16,.86);display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;z-index:10}
   .overlay.hidden{display:none}
+  .hidden{display:none}
   h1{font-size:54px;letter-spacing:6px;background:linear-gradient(180deg,#bfe3ff,#3aa0ff 60%,#1b6fc4);
     -webkit-background-clip:text;background-clip:text;color:transparent}
   .tag{opacity:.8;margin-bottom:14px}
@@ -52,16 +60,16 @@
 <body>
 <div id="app">
   <div id="hud">
-    <div class="side" id="side0"><span class="name" id="name0">YOU</span>
+    <div class="side" id="side0"><span class="name" id="name0"></span>
       <span class="cells" id="cells0">0</span><span class="mv" id="mv0"></span></div>
     <div id="status"></div>
-    <div class="side" id="side1"><span class="name" id="name1">AI</span>
+    <div class="side" id="side1"><span class="name" id="name1"></span>
       <span class="cells" id="cells1">0</span><span class="mv" id="mv1"></span></div>
   </div>
-  <div id="board"><canvas id="cv"></canvas></div>
+  <div id="board"><canvas id="cv"></canvas><div id="banner" class="hidden"></div></div>
   <div id="bar">
-    <button class="tool sel" id="bDig">⛏ DIG</button>
-    <button class="tool" id="bFill">▲ FILL</button>
+    <button class="tool sel" id="bDig"></button>
+    <button class="tool" id="bFill"></button>
     <button class="mini" id="bSound">🔊</button>
     <button class="mini" id="bMenu">☰</button>
   </div>
@@ -69,28 +77,23 @@
 
 <div class="overlay" id="menu">
   <h1>BASIN</h1>
-  <div class="tag">Shape the land. Water does the rest.</div>
-  <button class="big primary" id="bVsAi">PLAY vs AI</button>
-  <button class="big" id="b2p">2 PLAYERS</button>
-  <button class="big" id="bHow">HOW TO PLAY</button>
+  <div class="tag" id="tagline"></div>
+  <button class="big primary" id="bTut"></button>
+  <button class="big" id="bVsAi"></button>
+  <button class="big" id="b2p"></button>
+  <button class="big" id="bHow"></button>
 </div>
 
 <div class="overlay hidden" id="how">
-  <div class="rules">
-    <div><b>Your move:</b> tap a cell to <b>DIG</b> it lower or <b>FILL</b> it higher. That is the whole game — you never touch the water.</div>
-    <div><b>Water</b> flows from your spring: downhill freely, across flat ground only a short way. It never climbs.</div>
-    <div>Land your water reaches is <b>yours</b>. Where both waters meet, nobody owns it.</div>
-    <div><b>Win:</b> pour your water into the enemy spring — or own more land when the moves run out.</div>
-    <div>Numbers on cells show height. Dig channels to attack, raise walls to defend… but every wall blocks water on both sides.</div>
-  </div>
-  <button class="big" id="bBack">BACK</button>
+  <div class="rules" id="rulesBox"></div>
+  <button class="big" id="bBack"></button>
 </div>
 
 <div class="overlay hidden" id="result">
   <div id="resTitle"></div>
   <div id="resSub"></div>
-  <button class="big primary" id="bAgain">REMATCH</button>
-  <button class="big" id="bToMenu">MENU</button>
+  <button class="big primary" id="bAgain"></button>
+  <button class="big" id="bToMenu"></button>
 </div>
 
 <script src="game.js"></script>
@@ -101,19 +104,97 @@ const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const SQ3 = Math.sqrt(3);
 const P_COL = ['#3aa0ff', '#ff8a3d'];
 const P_DARK = ['#1c5fa3', '#b35a1e'];
-const TERRAIN_OK = ['#141e2c','#1f3140','#2f4a4a','#52684f','#74855c','#9aa468','#c4b884'];
+const TERRAIN = ['#141e2c','#1f3140','#2f4a4a','#52684f','#74855c','#9aa468','#c4b884'];
+const WALL = '#0c1218';
+const LIFT = 0.24; // elevation pixels per height step, in units of hex size
+
+/* ---------- language ---------- */
+const EN = {
+  dig:'⛏ DIG', fill:'▲ FILL',
+  tagline:'Shape the land. Water does the rest.',
+  mTut:'TUTORIAL · 1 min', mAi:'PLAY vs AI', m2p:'2 PLAYERS', mRules:'RULES',
+  back:'BACK', rematch:'REMATCH', playAi:'PLAY vs AI', menu:'MENU',
+  you:'YOU', ai:'AI', enemy:'ENEMY', blue:'BLUE', orange:'ORANGE',
+  yourTurn:'Your turn', thinking:'AI is thinking…', blueMove:'Blue to move', orangeMove:'Orange to move',
+  moves:' moves', land:' land',
+  youWin:'YOU WIN', aiWins:'AI WINS', blueWins:'BLUE WINS', orangeWins:'ORANGE WINS', draw:'DRAW',
+  byFlood:'The spring was flooded.',
+  byLand:(a,b)=>'Land owned — Blue '+a+' : '+b+' Orange',
+  tutDone:'YOU KNOW EVERYTHING', tutDoneSub:'You flooded the enemy spring. Now do it to the AI.',
+  tapCont:'TAP TO CONTINUE', tapCell:'TAP THE GLOWING CELL',
+  rules:[
+    '<b>Your move:</b> tap a cell to <b>DIG</b> it 1 lower or <b>FILL</b> it 1 higher. That is the whole game — you never touch the water.',
+    '<b>Water</b> flows from your spring: downhill freely, across flat ground only 2 cells, and it <b>never climbs</b>. Tall tiles are hills, sunken tiles are pits.',
+    'Land your water reaches is <b>yours</b>. Where both waters meet, nobody scores it.',
+    '<b>Win:</b> get your water next to the enemy spring — it pours in and they lose instantly. Or own more land when moves run out.',
+    'Dig channels to attack, raise walls to defend… but every wall blocks water on <b>both</b> sides.',
+  ],
+  tut:[
+    { wait:'tap',  msg:'This round circle is your <b style="color:var(--p0)">spring</b> 💧 — it makes water, forever. Every cell your water touches is <b>your land</b>.' },
+    { wait:'tap',  msg:'The ground has <b>height</b> — tall tiles are hills, sunken tiles are pits. Water flows downhill, crosses only 2 flat cells, and <b>never climbs up</b>.' },
+    { wait:'move', cell:[0,1], tool:-1,
+      msg:'Your only move is changing the ground. <b style="color:var(--gold)">⛏ DIG the glowing cell</b> — make it 1 lower and watch.',
+      after:'Water RUSHES into lower ground — all that new land is yours!' },
+    { wait:'move', cell:[2,-3], tool:1,
+      msg:'Orange dug a channel on your right! <b style="color:var(--gold)">▲ FILL the glowing cell</b> to raise a wall across it.',
+      after:'The orange water retreats — walls block water. (Careful: they block YOUR water too.)' },
+    { wait:'move', cell:[0,-3], tool:-1,
+      msg:'Now WIN: a spring swallows any water that reaches a cell <b>next to it</b>. <b style="color:var(--gold)">⛏ DIG the glowing cell</b>.' },
+    { wait:'move', cell:[0,-3], tool:-1,
+      msg:'Still too high for your water. <b style="color:var(--gold)">⛏ DIG it once more</b> — carve it deeper!' },
+  ],
+};
+const TR = {
+  dig:'⛏ KAZ', fill:'▲ DOLDUR',
+  tagline:'Araziyi şekillendir. Gerisini su halleder.',
+  mTut:'EĞİTİM · 1 dk', mAi:'YAPAY ZEKÂYA KARŞI', m2p:'2 OYUNCU', mRules:'KURALLAR',
+  back:'GERİ', rematch:'TEKRAR', playAi:'YZ\'YE KARŞI OYNA', menu:'MENÜ',
+  you:'SEN', ai:'YZ', enemy:'DÜŞMAN', blue:'MAVİ', orange:'TURUNCU',
+  yourTurn:'Sıra sende', thinking:'YZ düşünüyor…', blueMove:'Sıra Mavi\'de', orangeMove:'Sıra Turuncu\'da',
+  moves:' hamle', land:' toprak',
+  youWin:'KAZANDIN', aiWins:'YZ KAZANDI', blueWins:'MAVİ KAZANDI', orangeWins:'TURUNCU KAZANDI', draw:'BERABERE',
+  byFlood:'Pınar basıldı.',
+  byLand:(a,b)=>'Toprak — Mavi '+a+' : '+b+' Turuncu',
+  tutDone:'ARTIK HAZIRSIN', tutDoneSub:'Düşman pınarını bastın. Şimdi aynısını yapay zekâya yap.',
+  tapCont:'DEVAM İÇİN DOKUN', tapCell:'PARLAYAN HÜCREYE DOKUN',
+  rules:[
+    '<b>Hamlen:</b> bir hücreye dokun, <b>KAZ</b> (1 alçalt) ya da <b>DOLDUR</b> (1 yükselt). Oyunun tamamı bu — suya hiç dokunmazsın.',
+    '<b>Su</b> pınarından akar: yokuş aşağı serbest, düz zeminde sadece 2 hücre, ve asla <b>yukarı tırmanmaz</b>. Kabarık karolar tepe, çökük karolar çukurdur.',
+    'Suyunun ulaştığı toprak <b>senindir</b>. İki suyun buluştuğu yer kimseye sayılmaz.',
+    '<b>Kazanmak:</b> suyunu rakip pınarın bitişiğine ulaştır — içine dökülür, rakip anında kaybeder. Ya da hamleler bitince çok toprağı olan kazanır.',
+    'Saldırmak için kanal kaz, savunmak için duvar yükselt… ama her duvar suyu <b>iki taraf için de</b> keser.',
+  ],
+  tut:[
+    { wait:'tap',  msg:'Bu yuvarlak senin <b style="color:var(--p0)">pınarın</b> 💧 — durmadan su üretir. Suyunun değdiği her hücre <b>senin toprağın</b>.' },
+    { wait:'tap',  msg:'Zeminin <b>yüksekliği</b> var — kabarık karolar tepe, çökükler çukur. Su yokuş aşağı akar, düzde sadece 2 hücre ilerler ve asla <b>yukarı tırmanmaz</b>.' },
+    { wait:'move', cell:[0,1], tool:-1,
+      msg:'Tek hamlen zemini değiştirmek. <b style="color:var(--gold)">⛏ Parlayan hücreyi KAZ</b> — 1 alçalt ve izle.',
+      after:'Su alçak zemine HÜCUM etti — bütün o yeni topraklar senin!' },
+    { wait:'move', cell:[2,-3], tool:1,
+      msg:'Turuncu sağ tarafında kanal kazdı! <b style="color:var(--gold)">▲ Parlayan hücreyi DOLDUR</b>, kanalın önüne duvar ör.',
+      after:'Turuncu su geri çekildi — duvarlar suyu keser. (Dikkat: SENİN suyunu da keser.)' },
+    { wait:'move', cell:[0,-3], tool:-1,
+      msg:'Şimdi KAZAN: pınar, <b>bitişiğindeki</b> hücreye ulaşan suyu içine çeker. <b style="color:var(--gold)">⛏ Parlayan hücreyi KAZ</b>.' },
+    { wait:'move', cell:[0,-3], tool:-1,
+      msg:'Suyun için hâlâ çok yüksek. <b style="color:var(--gold)">⛏ Bir kez daha KAZ</b> — derinleştir!' },
+  ],
+};
+const L = ((navigator.language||'').toLowerCase().indexOf('tr')===0) ? TR : EN;
 
 let g = null;            // game state
-let mode = 'ai';         // 'ai' | '2p'
+let mode = 'ai';         // 'ai' | '2p' | 'tut'
 let tool = -1;           // -1 dig, +1 fill
 let busyUntil = 0;       // input lock while water animates / AI thinks
 let hover = null;
 let lastMove = null;     // {q,r,delta,player}
 let soundOn = localStorage.getItem('basin_snd') !== '0';
 let view = { s: 30, ox: 0, oy: 0 };
-// per-cell water display: key -> [{a,target,at}]x2
-const wAnim = new Map();
+const wAnim = new Map(); // per-cell water display: key -> [{a,target,at}]x2
 let ripples = [];        // {x,y,t0,col}
+let floats = [];         // {x,y,text,col,t0}
+let flash = null;
+let tut = null;          // {i, waiting}
+let drawOrder = null;
 
 /* ---------- audio ---------- */
 let AC = null;
@@ -154,6 +235,10 @@ function resize(){
 addEventListener('resize', resize);
 
 function hexXY(q,r){ return [view.ox + view.s*SQ3*(q+r/2), view.oy + view.s*1.5*r]; }
+function surfXY(c){
+  const [x,y] = hexXY(c.q,c.r);
+  return [x, y + (B.H_START - c.h)*view.s*LIFT];
+}
 function pixelHex(px,py){
   const x=(px-view.ox)/view.s, y=(py-view.oy)/view.s;
   const qf=(SQ3/3*x - y/3), rf=(2/3*y);
@@ -163,12 +248,50 @@ function pixelHex(px,py){
   return {q:rq, r:rr};
 }
 
+/* ---------- tutorial ---------- */
+function startTutorial(){
+  mode = 'tut'; g = B.newGame(); drawOrder = null;
+  const set = (q,r,h) => { g.cells.get(B.key(q,r)).h = h; };
+  set(0,0,2); set(1,0,2); set(-1,1,2);   // pocket so the first dig cascades
+  set(2,-3,2); set(2,-2,2);              // orange attack channel
+  set(0,-1,1); set(0,-2,1);              // approach to the enemy spring
+  g.movesLeft = [99,99];
+  B.refreshFlows(g);
+  document.getElementById('name0').textContent = L.you;
+  document.getElementById('name1').textContent = L.enemy;
+  wAnim.clear(); ripples=[]; floats=[]; lastMove=null; busyUntil=0;
+  syncWater(true);
+  tut = { i:0, waiting:false };
+  show('menu',false); show('result',false); show('how',false);
+  enterTutStep();
+  updateHud();
+}
+function tutStep(){ return tut ? L.tut[tut.i] : null; }
+function enterTutStep(){
+  const st = tutStep();
+  if(!st) return;
+  if(st.tool) pickTool(st.tool);
+  glowTool(st.wait==='move' ? st.tool : 0);
+  setBanner(st.msg, st.wait==='tap' ? L.tapCont : L.tapCell);
+}
+function setBanner(html, hint){
+  const b = document.getElementById('banner');
+  b.classList.remove('hidden');
+  b.innerHTML = html + (hint ? '<span class="hint">'+hint+' ▾</span>' : '');
+}
+function hideBanner(){ document.getElementById('banner').classList.add('hidden'); }
+function glowTool(t){
+  document.getElementById('bDig').classList.toggle('glow', t===-1);
+  document.getElementById('bFill').classList.toggle('glow', t===1);
+}
+
 /* ---------- game flow ---------- */
 function startGame(m){
-  mode = m; g = B.newGame();
-  document.getElementById('name0').textContent = m==='ai' ? 'YOU' : 'BLUE';
-  document.getElementById('name1').textContent = m==='ai' ? 'AI' : 'ORANGE';
-  wAnim.clear(); ripples=[]; lastMove=null; busyUntil=0;
+  mode = m; g = B.newGame(); tut = null; drawOrder = null;
+  document.getElementById('name0').textContent = m==='ai' ? L.you : L.blue;
+  document.getElementById('name1').textContent = m==='ai' ? L.ai : L.orange;
+  wAnim.clear(); ripples=[]; floats=[]; lastMove=null; busyUntil=0;
+  glowTool(0); hideBanner();
   syncWater(true);
   show('menu',false); show('result',false); show('how',false);
   updateHud();
@@ -192,7 +315,7 @@ function syncWater(instant){
         const step = steps[p].get(k) || 0;
         st[p].at = instant ? 0 : now + (want ? step*55 : 0);
         if(want){ maxStep=Math.max(maxStep,step); grew=true;
-          if(!instant){ const c=g.cells.get(k); const [x,y]=hexXY(c.q,c.r);
+          if(!instant){ const c=g.cells.get(k); const [x,y]=surfXY(c);
             ripples.push({x,y,t0:st[p].at,col:P_COL[p]}); } }
       }
       if(instant) st[p].a = st[p].target;
@@ -202,33 +325,59 @@ function syncWater(instant){
   return maxStep*55 + 350;
 }
 
+function spawnFloat(c,text,col){
+  const [x,y] = surfXY(c);
+  floats.push({x, y, text, col, t0: performance.now()});
+}
+
+function doMove(q,r,delta,player){
+  const before = B.counts(g)[player];
+  (delta<0?sDig:sFill)();
+  B.applyMove(g,q,r,delta);
+  lastMove = {q,r,delta,player};
+  const gain = B.counts(g)[player] - before;
+  if(gain !== 0) spawnFloat(g.cells.get(B.key(q,r)),
+    (gain>0?'+':'')+gain+L.land, gain>0?P_COL[player]:'#ff5d5d');
+  const animMs = syncWater(false);
+  busyUntil = performance.now() + animMs;
+  updateHud();
+  return animMs;
+}
+
 function tryMove(q,r){
   if(!g || g.winner!==null) return;
   if(performance.now() < busyUntil) return;
+
+  if(mode==='tut'){
+    const st = tutStep();
+    if(!st || st.wait!=='move' || tut.waiting) return;
+    if(q!==st.cell[0] || r!==st.cell[1]){ sErr(); flash={q,r,t0:performance.now()}; return; }
+    const animMs = doMove(q,r,st.tool,0);
+    if(g.winner!==null){ glowTool(0); hideBanner(); setTimeout(finish, animMs+300); return; }
+    g.turn = 0; g.movesLeft = [99,99];
+    tut.i++;
+    if(st.after){
+      tut.waiting = true;
+      setBanner(st.after);
+      glowTool(0);
+      setTimeout(()=>{ tut.waiting=false; enterTutStep(); }, 2400);
+    } else enterTutStep();
+    return;
+  }
+
   if(mode==='ai' && g.turn!==0) return;
   const player = g.turn;
   if(!B.legalMove(g,q,r,tool)){ sErr(); flash={q,r,t0:performance.now()}; return; }
-  (tool<0?sDig:sFill)();
-  B.applyMove(g,q,r,tool);
-  lastMove = {q,r,delta:tool,player};
-  const animMs = syncWater(false);
-  busyUntil = performance.now() + animMs;
-  updateHud();
+  const animMs = doMove(q,r,tool,player);
   if(g.winner!==null){ setTimeout(finish, animMs+200); return; }
   if(mode==='ai' && g.turn===1) setTimeout(aiTurn, animMs+250);
 }
-let flash = null;
 
 function aiTurn(){
-  if(!g || g.winner!==null || g.turn!==1) return;
+  if(!g || g.winner!==null || g.turn!==1 || mode!=='ai') return;
   const mv = B.aiPickMove(g,1);
   if(!mv){ updateHud(); return; }
-  (mv.delta<0?sDig:sFill)();
-  B.applyMove(g,mv.q,mv.r,mv.delta);
-  lastMove = {q:mv.q,r:mv.r,delta:mv.delta,player:1};
-  const animMs = syncWater(false);
-  busyUntil = performance.now() + animMs;
-  updateHud();
+  const animMs = doMove(mv.q,mv.r,mv.delta,1);
   if(g.winner!==null) setTimeout(finish, animMs+200);
 }
 
@@ -237,25 +386,31 @@ function updateHud(){
   const c = B.counts(g);
   document.getElementById('cells0').textContent = c[0];
   document.getElementById('cells1').textContent = c[1];
-  document.getElementById('mv0').textContent = g.movesLeft[0]+' moves';
-  document.getElementById('mv1').textContent = g.movesLeft[1]+' moves';
-  document.getElementById('side0').classList.toggle('active', g.winner===null && g.turn===0);
-  document.getElementById('side1').classList.toggle('active', g.winner===null && g.turn===1);
+  document.getElementById('mv0').textContent = mode==='tut' ? '' : g.movesLeft[0]+L.moves;
+  document.getElementById('mv1').textContent = mode==='tut' ? '' : g.movesLeft[1]+L.moves;
+  document.getElementById('side0').classList.toggle('active', g.winner===null && g.turn===0 && mode!=='tut');
+  document.getElementById('side1').classList.toggle('active', g.winner===null && g.turn===1 && mode!=='tut');
   const st = document.getElementById('status');
-  if(g.winner!==null) st.textContent = '';
-  else if(mode==='ai') st.textContent = g.turn===0 ? 'Your turn' : 'AI is thinking…';
-  else st.textContent = (g.turn===0?'Blue':'Orange')+' to move';
+  if(g.winner!==null || mode==='tut') st.textContent = '';
+  else if(mode==='ai') st.textContent = g.turn===0 ? L.yourTurn : L.thinking;
+  else st.textContent = g.turn===0 ? L.blueMove : L.orangeMove;
 }
 
 function finish(){
   const c = B.counts(g);
   const t = document.getElementById('resTitle'), s = document.getElementById('resSub');
-  const names = mode==='ai' ? ['YOU WIN','AI WINS'] : ['BLUE WINS','ORANGE WINS'];
-  if(g.winner===-1){ t.textContent='DRAW'; t.style.color='#cfd8e0'; }
+  const again = document.getElementById('bAgain');
+  if(mode==='tut'){
+    t.textContent = L.tutDone; t.style.color = '#7ddf8f';
+    s.textContent = L.tutDoneSub;
+    again.textContent = L.playAi;
+    sWin(); show('result',true); return;
+  }
+  again.textContent = L.rematch;
+  const names = mode==='ai' ? [L.youWin,L.aiWins] : [L.blueWins,L.orangeWins];
+  if(g.winner===-1){ t.textContent=L.draw; t.style.color='#cfd8e0'; }
   else { t.textContent = names[g.winner]; t.style.color = P_COL[g.winner]; }
-  s.textContent = g.winBy==='flood'
-    ? 'The spring was flooded.'
-    : 'Land owned — Blue '+c[0]+' : '+c[1]+' Orange';
+  s.textContent = g.winBy==='flood' ? L.byFlood : L.byLand(c[0],c[1]);
   if(mode==='ai') (g.winner===0?sWin:sLose)(); else sWin();
   show('result',true);
 }
@@ -277,71 +432,86 @@ function frame(now){
   ctx.clearRect(0,0,r.width,r.height);
   if(!g) return;
   const s = view.s*0.96;
+  if(!drawOrder) drawOrder = [...g.cells.values()].sort((a,b)=>a.r-b.r || a.q-b.q);
 
-  for(const c of g.cells.values()){
-    const [x,y] = hexXY(c.q,c.r);
+  for(const c of drawOrder){
+    const [x,yBase] = hexXY(c.q,c.r);
+    const [,ySurf] = surfXY(c);
     const spring = B.isSpring(g,c.q,c.r);
-    hexPath(x,y,s);
-    ctx.fillStyle = TERRAIN_OK[c.h];
+
+    // elevation wall between baseline plane and the tile surface
+    const yLo = Math.min(yBase,ySurf), yHi = Math.max(yBase,ySurf);
+    if(yHi-yLo >= 1){
+      ctx.fillStyle = WALL;
+      for(let yy=yHi; yy>=yLo; yy-=1.5){ hexPath(x,yy,s); ctx.fill(); }
+    }
+    hexPath(x,ySurf,s);
+    ctx.fillStyle = TERRAIN[c.h];
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1.5; ctx.stroke();
 
-    // water layers
     const st = wAnim.get(B.key(c.q,c.r));
     if(st){
       for(const p of [0,1]){
         const w = st[p];
         if(now >= w.at) w.a += (w.target - w.a)*0.16;
         if(w.a > .01){
-          hexPath(x,y,s*.94);
+          hexPath(x,ySurf,s*.94);
           ctx.fillStyle = P_COL[p];
-          ctx.globalAlpha = .42*w.a;
+          ctx.globalAlpha = .45*w.a;
           ctx.fill(); ctx.globalAlpha = 1;
         }
       }
-      if(st[0].a>.5 && st[1].a>.5){ // contested marker
-        hexPath(x,y,s*.4); ctx.strokeStyle='#b48ae0'; ctx.lineWidth=2.5; ctx.stroke();
+      if(st[0].a>.5 && st[1].a>.5){
+        hexPath(x,ySurf,s*.4); ctx.strokeStyle='#b48ae0'; ctx.lineWidth=2.5; ctx.stroke();
       }
     }
 
     if(spring){
       const p = (c.r>0)?0:1;
-      ctx.fillStyle = P_DARK[p]; ctx.beginPath(); ctx.arc(x,y,s*.52,0,7); ctx.fill();
+      ctx.fillStyle = P_DARK[p]; ctx.beginPath(); ctx.arc(x,ySurf,s*.52,0,7); ctx.fill();
       ctx.strokeStyle = P_COL[p]; ctx.lineWidth=3;
-      ctx.beginPath(); ctx.arc(x,y,s*.52,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x,ySurf,s*.52,0,7); ctx.stroke();
       const pul = s*(.62+.1*Math.sin(now/350));
-      ctx.globalAlpha=.5; ctx.beginPath(); ctx.arc(x,y,pul,0,7); ctx.stroke(); ctx.globalAlpha=1;
+      ctx.globalAlpha=.5; ctx.beginPath(); ctx.arc(x,ySurf,pul,0,7); ctx.stroke(); ctx.globalAlpha=1;
     } else {
-      ctx.fillStyle = c.h>=5 ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)';
-      ctx.font = (s*.5)+'px Segoe UI';
+      ctx.fillStyle = c.h>=5 ? 'rgba(0,0,0,.4)' : 'rgba(255,255,255,.38)';
+      ctx.font = (s*.38)+'px Segoe UI';
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(c.h, x, y);
+      ctx.fillText(c.h, x, ySurf);
     }
   }
 
-  // last move marker
   if(lastMove){
-    const [x,y] = hexXY(lastMove.q,lastMove.r);
-    hexPath(x,y,s*1.0);
+    const c = g.cells.get(B.key(lastMove.q,lastMove.r));
+    const [x,y] = surfXY(c);
+    hexPath(x,y,s);
     ctx.strokeStyle = P_COL[lastMove.player]; ctx.lineWidth=2.5;
     ctx.setLineDash([5,4]); ctx.stroke(); ctx.setLineDash([]);
   }
-  // hover
+  const ts = tutStep();
+  if(ts && ts.wait==='move' && !tut.waiting && g.winner===null){
+    const c = g.cells.get(B.key(ts.cell[0],ts.cell[1]));
+    const [x,y] = surfXY(c);
+    const k = .5+.5*Math.sin(now/220);
+    hexPath(x,y,s*(1.02+0.07*k));
+    ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 3+2*k;
+    ctx.globalAlpha = .55+.45*k; ctx.stroke(); ctx.globalAlpha = 1;
+  }
   if(hover && g.winner===null){
     const c = g.cells.get(B.key(hover.q,hover.r));
     if(c && !B.isSpring(g,hover.q,hover.r)){
-      const [x,y]=hexXY(hover.q,hover.r);
+      const [x,y] = surfXY(c);
       hexPath(x,y,s); ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=2; ctx.stroke();
     }
   }
-  // illegal flash
   if(flash){
     const dt = now-flash.t0;
-    if(dt<260){ const [x,y]=hexXY(flash.q,flash.r);
+    const c = g.cells.get(B.key(flash.q,flash.r));
+    if(dt<260 && c){ const [x,y]=surfXY(c);
       hexPath(x,y,s); ctx.fillStyle='rgba(255,60,60,'+(0.5*(1-dt/260))+')'; ctx.fill();
     } else flash=null;
   }
-  // ripples
   ripples = ripples.filter(rp => now-rp.t0 < 500);
   for(const rp of ripples){
     const dt = now-rp.t0; if(dt<0) continue;
@@ -351,14 +521,35 @@ function frame(now){
     ctx.beginPath(); ctx.arc(rp.x,rp.y,s*(0.3+k*0.9),0,7); ctx.stroke();
     ctx.globalAlpha = 1;
   }
+  floats = floats.filter(f => now-f.t0 < 1300);
+  for(const f of floats){
+    const k = (now-f.t0)/1300;
+    ctx.globalAlpha = k<.15 ? k/.15 : 1-(k-.15)/.85;
+    ctx.fillStyle = f.col;
+    ctx.font = '700 '+(view.s*.62)+'px Segoe UI';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(f.text, f.x, f.y - view.s*1.7*k);
+    ctx.globalAlpha = 1;
+  }
 }
 
 /* ---------- input ---------- */
 cv.addEventListener('pointerdown', e=>{
   ac();
+  if(mode==='tut' && tut && !tut.waiting){
+    const st = tutStep();
+    if(st && st.wait==='tap'){ tut.i++; enterTutStep(); return; }
+  }
   const r = cv.getBoundingClientRect();
   const h = pixelHex(e.clientX-r.left, e.clientY-r.top);
   tryMove(h.q,h.r);
+});
+document.getElementById('banner').addEventListener('pointerdown', ()=>{
+  ac();
+  if(mode==='tut' && tut && !tut.waiting){
+    const st = tutStep();
+    if(st && st.wait==='tap'){ tut.i++; enterTutStep(); }
+  }
 });
 cv.addEventListener('pointermove', e=>{
   const r = cv.getBoundingClientRect();
@@ -378,13 +569,26 @@ document.getElementById('bSound').onclick = function(){
   this.textContent = soundOn?'🔊':'🔇';
 };
 document.getElementById('bMenu').onclick = ()=>show('menu',true);
+document.getElementById('bTut').onclick = ()=>startTutorial();
 document.getElementById('bVsAi').onclick = ()=>startGame('ai');
 document.getElementById('b2p').onclick  = ()=>startGame('2p');
 document.getElementById('bHow').onclick = ()=>{ show('menu',false); show('how',true); };
 document.getElementById('bBack').onclick= ()=>{ show('how',false); show('menu',true); };
-document.getElementById('bAgain').onclick = ()=>startGame(mode);
+document.getElementById('bAgain').onclick = ()=>startGame(mode==='tut'?'ai':mode);
 document.getElementById('bToMenu').onclick= ()=>{ show('result',false); show('menu',true); };
+
+/* static labels */
+document.getElementById('bDig').textContent = L.dig;
+document.getElementById('bFill').textContent = L.fill;
+document.getElementById('tagline').textContent = L.tagline;
+document.getElementById('bTut').textContent = L.mTut;
+document.getElementById('bVsAi').textContent = L.mAi;
+document.getElementById('b2p').textContent = L.m2p;
+document.getElementById('bHow').textContent = L.mRules;
+document.getElementById('bBack').textContent = L.back;
+document.getElementById('bToMenu').textContent = L.menu;
 document.getElementById('bSound').textContent = soundOn?'🔊':'🔇';
+document.getElementById('rulesBox').innerHTML = L.rules.map(p=>'<div>'+p+'</div>').join('');
 
 resize();
 requestAnimationFrame(frame);
