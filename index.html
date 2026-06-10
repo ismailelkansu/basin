@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>BASIN — shape the land, water does the rest</title>
+<style>
+  :root{
+    --p0:#3aa0ff; --p1:#ff8a3d; --bg:#10151a; --panel:#1b232c; --txt:#e8eef4;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+    font-family:'Segoe UI',system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+  #app{height:100%;display:flex;flex-direction:column}
+  #hud{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;gap:8px}
+  .side{display:flex;flex-direction:column;align-items:center;min-width:86px;
+    padding:6px 10px;border-radius:12px;background:var(--panel);border:2px solid transparent;
+    transition:border-color .25s, box-shadow .25s}
+  .side .name{font-size:11px;letter-spacing:1px;opacity:.75}
+  .side .cells{font-size:24px;font-weight:700;line-height:1.1}
+  .side .mv{font-size:11px;opacity:.7}
+  #side0 .cells{color:var(--p0)} #side1 .cells{color:var(--p1)}
+  .side.active{border-color:currentColor;box-shadow:0 0 14px -2px currentColor}
+  #side0.active{color:var(--p0)} #side1.active{color:var(--p1)}
+  #status{font-size:13px;text-align:center;opacity:.85;flex:1}
+  #board{flex:1;position:relative;min-height:0}
+  canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+  #bar{display:flex;gap:10px;justify-content:center;align-items:center;padding:10px 14px 16px}
+  .tool{flex:0 1 150px;padding:13px 0;font-size:16px;font-weight:700;letter-spacing:1px;
+    border:2px solid #2c3845;border-radius:14px;background:var(--panel);color:var(--txt);
+    cursor:pointer}
+  .tool.sel{border-color:var(--txt);background:#27313d}
+  .mini{padding:13px 14px;font-size:15px;border-radius:14px;border:2px solid #2c3845;
+    background:var(--panel);color:var(--txt);cursor:pointer}
+  .overlay{position:fixed;inset:0;background:rgba(8,12,16,.86);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;z-index:10}
+  .overlay.hidden{display:none}
+  h1{font-size:54px;letter-spacing:6px;background:linear-gradient(180deg,#bfe3ff,#3aa0ff 60%,#1b6fc4);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{opacity:.8;margin-bottom:14px}
+  .big{width:min(320px,80vw);padding:15px 0;font-size:17px;font-weight:700;letter-spacing:1px;
+    border-radius:14px;border:2px solid #2c3845;background:var(--panel);color:var(--txt);cursor:pointer}
+  .big.primary{background:var(--p0);border-color:var(--p0);color:#08111c}
+  .rules{max-width:420px;text-align:left;font-size:15px;line-height:1.55;display:flex;
+    flex-direction:column;gap:10px}
+  .rules b{color:var(--p0)}
+  #resTitle{font-size:34px;font-weight:800;letter-spacing:2px}
+  #resSub{opacity:.85}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div class="side" id="side0"><span class="name" id="name0">YOU</span>
+      <span class="cells" id="cells0">0</span><span class="mv" id="mv0"></span></div>
+    <div id="status"></div>
+    <div class="side" id="side1"><span class="name" id="name1">AI</span>
+      <span class="cells" id="cells1">0</span><span class="mv" id="mv1"></span></div>
+  </div>
+  <div id="board"><canvas id="cv"></canvas></div>
+  <div id="bar">
+    <button class="tool sel" id="bDig">⛏ DIG</button>
+    <button class="tool" id="bFill">▲ FILL</button>
+    <button class="mini" id="bSound">🔊</button>
+    <button class="mini" id="bMenu">☰</button>
+  </div>
+</div>
+
+<div class="overlay" id="menu">
+  <h1>BASIN</h1>
+  <div class="tag">Shape the land. Water does the rest.</div>
+  <button class="big primary" id="bVsAi">PLAY vs AI</button>
+  <button class="big" id="b2p">2 PLAYERS</button>
+  <button class="big" id="bHow">HOW TO PLAY</button>
+</div>
+
+<div class="overlay hidden" id="how">
+  <div class="rules">
+    <div><b>Your move:</b> tap a cell to <b>DIG</b> it lower or <b>FILL</b> it higher. That is the whole game — you never touch the water.</div>
+    <div><b>Water</b> flows from your spring: downhill freely, across flat ground only a short way. It never climbs.</div>
+    <div>Land your water reaches is <b>yours</b>. Where both waters meet, nobody owns it.</div>
+    <div><b>Win:</b> pour your water into the enemy spring — or own more land when the moves run out.</div>
+    <div>Numbers on cells show height. Dig channels to attack, raise walls to defend… but every wall blocks water on both sides.</div>
+  </div>
+  <button class="big" id="bBack">BACK</button>
+</div>
+
+<div class="overlay hidden" id="result">
+  <div id="resTitle"></div>
+  <div id="resSub"></div>
+  <button class="big primary" id="bAgain">REMATCH</button>
+  <button class="big" id="bToMenu">MENU</button>
+</div>
+
+<script src="game.js"></script>
+<script>
+'use strict';
+const B = window.Basin;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const SQ3 = Math.sqrt(3);
+const P_COL = ['#3aa0ff', '#ff8a3d'];
+const P_DARK = ['#1c5fa3', '#b35a1e'];
+const TERRAIN_OK = ['#141e2c','#1f3140','#2f4a4a','#52684f','#74855c','#9aa468','#c4b884'];
+
+let g = null;            // game state
+let mode = 'ai';         // 'ai' | '2p'
+let tool = -1;           // -1 dig, +1 fill
+let busyUntil = 0;       // input lock while water animates / AI thinks
+let hover = null;
+let lastMove = null;     // {q,r,delta,player}
+let soundOn = localStorage.getItem('basin_snd') !== '0';
+let view = { s: 30, ox: 0, oy: 0 };
+// per-cell water display: key -> [{a,target,at}]x2
+const wAnim = new Map();
+let ripples = [];        // {x,y,t0,col}
+
+/* ---------- audio ---------- */
+let AC = null;
+function ac(){ if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==='suspended') AC.resume(); return AC; }
+function tone(f0,f1,dur,type,vol){
+  if(!soundOn) return;
+  try{
+    const a=ac(), o=a.createOscillator(), gn=a.createGain(), t=a.currentTime;
+    o.type=type; o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+dur);
+    gn.gain.setValueAtTime(vol,t); gn.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(gn).connect(a.destination); o.start(t); o.stop(t+dur);
+  }catch(e){}
+}
+const sDig =()=>tone(150,65,.14,'sine',.5);
+const sFill=()=>tone(90,170,.12,'sine',.4);
+const sErr =()=>tone(220,180,.09,'square',.12);
+function sFlow(){ if(!soundOn) return; try{
+  const a=ac(),t=a.currentTime,len=.35,buf=a.createBuffer(1,a.sampleRate*len,a.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
+  const src=a.createBufferSource(); src.buffer=buf;
+  const f=a.createBiquadFilter(); f.type='bandpass'; f.frequency.setValueAtTime(500,t);
+  f.frequency.exponentialRampToValueAtTime(1600,t+len);
+  const gn=a.createGain(); gn.gain.setValueAtTime(.18,t); gn.gain.exponentialRampToValueAtTime(.0001,t+len);
+  src.connect(f).connect(gn).connect(a.destination); src.start(t);
+}catch(e){} }
+function sWin(){ [262,330,392,523].forEach((f,i)=>setTimeout(()=>tone(f,f,.18,'triangle',.35),i*120)); }
+function sLose(){ [392,330,262,196].forEach((f,i)=>setTimeout(()=>tone(f,f*.97,.2,'triangle',.3),i*140)); }
+
+/* ---------- layout ---------- */
+function resize(){
+  const r = cv.parentElement.getBoundingClientRect(), dpr = devicePixelRatio||1;
+  cv.width = r.width*dpr; cv.height = r.height*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  view.s = Math.min(r.width/(SQ3*(2*B.R+1)+1), r.height/(1.5*2*B.R+2.6));
+  view.ox = r.width/2; view.oy = r.height/2;
+}
+addEventListener('resize', resize);
+
+function hexXY(q,r){ return [view.ox + view.s*SQ3*(q+r/2), view.oy + view.s*1.5*r]; }
+function pixelHex(px,py){
+  const x=(px-view.ox)/view.s, y=(py-view.oy)/view.s;
+  const qf=(SQ3/3*x - y/3), rf=(2/3*y);
+  let rq=Math.round(qf), rr=Math.round(rf), rs=Math.round(-qf-rf);
+  const dq=Math.abs(rq-qf), dr=Math.abs(rr-rf), ds=Math.abs(rs+qf+rf);
+  if(dq>dr&&dq>ds) rq=-rr-rs; else if(dr>ds) rr=-rq-rs;
+  return {q:rq, r:rr};
+}
+
+/* ---------- game flow ---------- */
+function startGame(m){
+  mode = m; g = B.newGame();
+  document.getElementById('name0').textContent = m==='ai' ? 'YOU' : 'BLUE';
+  document.getElementById('name1').textContent = m==='ai' ? 'AI' : 'ORANGE';
+  wAnim.clear(); ripples=[]; lastMove=null; busyUntil=0;
+  syncWater(true);
+  show('menu',false); show('result',false); show('how',false);
+  updateHud();
+}
+function show(id,on){ document.getElementById(id).classList.toggle('hidden',!on); }
+
+function syncWater(instant){
+  const now = performance.now();
+  const steps = [
+    B.flowSteps(g.cells, g.springs[0], g.flows[0]),
+    B.flowSteps(g.cells, g.springs[1], g.flows[1]),
+  ];
+  let maxStep = 0, grew = false;
+  for(const k of g.cells.keys()){
+    let st = wAnim.get(k);
+    if(!st){ st=[{a:0,target:0,at:0},{a:0,target:0,at:0}]; wAnim.set(k,st); }
+    for(const p of [0,1]){
+      const want = g.flows[p].has(k) ? 1 : 0;
+      if(st[p].target !== want){
+        st[p].target = want;
+        const step = steps[p].get(k) || 0;
+        st[p].at = instant ? 0 : now + (want ? step*55 : 0);
+        if(want){ maxStep=Math.max(maxStep,step); grew=true;
+          if(!instant){ const c=g.cells.get(k); const [x,y]=hexXY(c.q,c.r);
+            ripples.push({x,y,t0:st[p].at,col:P_COL[p]}); } }
+      }
+      if(instant) st[p].a = st[p].target;
+    }
+  }
+  if(!instant && grew) sFlow();
+  return maxStep*55 + 350;
+}
+
+function tryMove(q,r){
+  if(!g || g.winner!==null) return;
+  if(performance.now() < busyUntil) return;
+  if(mode==='ai' && g.turn!==0) return;
+  const player = g.turn;
+  if(!B.legalMove(g,q,r,tool)){ sErr(); flash={q,r,t0:performance.now()}; return; }
+  (tool<0?sDig:sFill)();
+  B.applyMove(g,q,r,tool);
+  lastMove = {q,r,delta:tool,player};
+  const animMs = syncWater(false);
+  busyUntil = performance.now() + animMs;
+  updateHud();
+  if(g.winner!==null){ setTimeout(finish, animMs+200); return; }
+  if(mode==='ai' && g.turn===1) setTimeout(aiTurn, animMs+250);
+}
+let flash = null;
+
+function aiTurn(){
+  if(!g || g.winner!==null || g.turn!==1) return;
+  const mv = B.aiPickMove(g,1);
+  if(!mv){ updateHud(); return; }
+  (mv.delta<0?sDig:sFill)();
+  B.applyMove(g,mv.q,mv.r,mv.delta);
+  lastMove = {q:mv.q,r:mv.r,delta:mv.delta,player:1};
+  const animMs = syncWater(false);
+  busyUntil = performance.now() + animMs;
+  updateHud();
+  if(g.winner!==null) setTimeout(finish, animMs+200);
+}
+
+function updateHud(){
+  if(!g) return;
+  const c = B.counts(g);
+  document.getElementById('cells0').textContent = c[0];
+  document.getElementById('cells1').textContent = c[1];
+  document.getElementById('mv0').textContent = g.movesLeft[0]+' moves';
+  document.getElementById('mv1').textContent = g.movesLeft[1]+' moves';
+  document.getElementById('side0').classList.toggle('active', g.winner===null && g.turn===0);
+  document.getElementById('side1').classList.toggle('active', g.winner===null && g.turn===1);
+  const st = document.getElementById('status');
+  if(g.winner!==null) st.textContent = '';
+  else if(mode==='ai') st.textContent = g.turn===0 ? 'Your turn' : 'AI is thinking…';
+  else st.textContent = (g.turn===0?'Blue':'Orange')+' to move';
+}
+
+function finish(){
+  const c = B.counts(g);
+  const t = document.getElementById('resTitle'), s = document.getElementById('resSub');
+  const names = mode==='ai' ? ['YOU WIN','AI WINS'] : ['BLUE WINS','ORANGE WINS'];
+  if(g.winner===-1){ t.textContent='DRAW'; t.style.color='#cfd8e0'; }
+  else { t.textContent = names[g.winner]; t.style.color = P_COL[g.winner]; }
+  s.textContent = g.winBy==='flood'
+    ? 'The spring was flooded.'
+    : 'Land owned — Blue '+c[0]+' : '+c[1]+' Orange';
+  if(mode==='ai') (g.winner===0?sWin:sLose)(); else sWin();
+  show('result',true);
+}
+
+/* ---------- render ---------- */
+function hexPath(x,y,s){
+  ctx.beginPath();
+  for(let i=0;i<6;i++){
+    const a = Math.PI/180*(60*i-30);
+    const px = x+s*Math.cos(a), py = y+s*Math.sin(a);
+    i?ctx.lineTo(px,py):ctx.moveTo(px,py);
+  }
+  ctx.closePath();
+}
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const r = cv.parentElement.getBoundingClientRect();
+  ctx.clearRect(0,0,r.width,r.height);
+  if(!g) return;
+  const s = view.s*0.96;
+
+  for(const c of g.cells.values()){
+    const [x,y] = hexXY(c.q,c.r);
+    const spring = B.isSpring(g,c.q,c.r);
+    hexPath(x,y,s);
+    ctx.fillStyle = TERRAIN_OK[c.h];
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // water layers
+    const st = wAnim.get(B.key(c.q,c.r));
+    if(st){
+      for(const p of [0,1]){
+        const w = st[p];
+        if(now >= w.at) w.a += (w.target - w.a)*0.16;
+        if(w.a > .01){
+          hexPath(x,y,s*.94);
+          ctx.fillStyle = P_COL[p];
+          ctx.globalAlpha = .42*w.a;
+          ctx.fill(); ctx.globalAlpha = 1;
+        }
+      }
+      if(st[0].a>.5 && st[1].a>.5){ // contested marker
+        hexPath(x,y,s*.4); ctx.strokeStyle='#b48ae0'; ctx.lineWidth=2.5; ctx.stroke();
+      }
+    }
+
+    if(spring){
+      const p = (c.r>0)?0:1;
+      ctx.fillStyle = P_DARK[p]; ctx.beginPath(); ctx.arc(x,y,s*.52,0,7); ctx.fill();
+      ctx.strokeStyle = P_COL[p]; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(x,y,s*.52,0,7); ctx.stroke();
+      const pul = s*(.62+.1*Math.sin(now/350));
+      ctx.globalAlpha=.5; ctx.beginPath(); ctx.arc(x,y,pul,0,7); ctx.stroke(); ctx.globalAlpha=1;
+    } else {
+      ctx.fillStyle = c.h>=5 ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)';
+      ctx.font = (s*.5)+'px Segoe UI';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(c.h, x, y);
+    }
+  }
+
+  // last move marker
+  if(lastMove){
+    const [x,y] = hexXY(lastMove.q,lastMove.r);
+    hexPath(x,y,s*1.0);
+    ctx.strokeStyle = P_COL[lastMove.player]; ctx.lineWidth=2.5;
+    ctx.setLineDash([5,4]); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // hover
+  if(hover && g.winner===null){
+    const c = g.cells.get(B.key(hover.q,hover.r));
+    if(c && !B.isSpring(g,hover.q,hover.r)){
+      const [x,y]=hexXY(hover.q,hover.r);
+      hexPath(x,y,s); ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=2; ctx.stroke();
+    }
+  }
+  // illegal flash
+  if(flash){
+    const dt = now-flash.t0;
+    if(dt<260){ const [x,y]=hexXY(flash.q,flash.r);
+      hexPath(x,y,s); ctx.fillStyle='rgba(255,60,60,'+(0.5*(1-dt/260))+')'; ctx.fill();
+    } else flash=null;
+  }
+  // ripples
+  ripples = ripples.filter(rp => now-rp.t0 < 500);
+  for(const rp of ripples){
+    const dt = now-rp.t0; if(dt<0) continue;
+    const k = dt/500;
+    ctx.globalAlpha = .5*(1-k);
+    ctx.strokeStyle = rp.col; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(rp.x,rp.y,s*(0.3+k*0.9),0,7); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ---------- input ---------- */
+cv.addEventListener('pointerdown', e=>{
+  ac();
+  const r = cv.getBoundingClientRect();
+  const h = pixelHex(e.clientX-r.left, e.clientY-r.top);
+  tryMove(h.q,h.r);
+});
+cv.addEventListener('pointermove', e=>{
+  const r = cv.getBoundingClientRect();
+  hover = pixelHex(e.clientX-r.left, e.clientY-r.top);
+});
+cv.addEventListener('pointerleave', ()=>hover=null);
+
+function pickTool(t){
+  tool = t;
+  document.getElementById('bDig').classList.toggle('sel', t===-1);
+  document.getElementById('bFill').classList.toggle('sel', t===1);
+}
+document.getElementById('bDig').onclick = ()=>pickTool(-1);
+document.getElementById('bFill').onclick = ()=>pickTool(1);
+document.getElementById('bSound').onclick = function(){
+  soundOn=!soundOn; localStorage.setItem('basin_snd', soundOn?'1':'0');
+  this.textContent = soundOn?'🔊':'🔇';
+};
+document.getElementById('bMenu').onclick = ()=>show('menu',true);
+document.getElementById('bVsAi').onclick = ()=>startGame('ai');
+document.getElementById('b2p').onclick  = ()=>startGame('2p');
+document.getElementById('bHow').onclick = ()=>{ show('menu',false); show('how',true); };
+document.getElementById('bBack').onclick= ()=>{ show('how',false); show('menu',true); };
+document.getElementById('bAgain').onclick = ()=>startGame(mode);
+document.getElementById('bToMenu').onclick= ()=>{ show('result',false); show('menu',true); };
+document.getElementById('bSound').textContent = soundOn?'🔊':'🔇';
+
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
